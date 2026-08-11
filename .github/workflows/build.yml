@@ -30,7 +30,7 @@ jobs:
 
       # 4. Compilar el APK de depuración (Gradle detectará tu CMake y compilará el C++ con el NDK automáticamente)
       - name: Compilar Debug APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew :app:assembleDebug
 
       # 5. Guardar el archivo APK generado como un artefacto descargable en la interfaz de GitHub
       - name: Subir APK generado
