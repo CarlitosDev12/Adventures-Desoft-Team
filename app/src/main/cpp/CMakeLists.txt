@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project("terminale")
+project("adventures")
 
 # Crea una librería compartida llamada "terminale" a partir de tu main.cpp
 add_library(
