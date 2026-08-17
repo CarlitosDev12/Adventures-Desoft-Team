@@ -140,19 +140,10 @@ void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana)
 static int loopCallback(int fd, int events, void* data) {
     ANativeActivity* actividad = static_cast<ANativeActivity*>(data);
     
-    // Procesar todos los eventos pendientes en la cola de entrada
-    AInputEvent* evento = nullptr;
-    while (AInputQueue_getEvent(actividad->inputQueue, &evento) >= 0) {
-        if (AInputQueue_preDispatchEvent(actividad->inputQueue, evento)) {
-            continue;
-        }
-        int handled = 0;
-        // Aquí puedes manejar tus toques si lo deseas, o simplemente consumirlos
-        AInputQueue_finishEvent(actividad->inputQueue, evento, handled);
-    }
-
+    // LÍNEA MODIFICADA: Llamada limpia sin variables inexistentes
     procesarEventosYDibujar(actividad);
-    return 1; 
+    
+    return 1; // Mantener activo el looper
 }
 
 void onInputQueueCreated(ANativeActivity* actividad, AInputQueue* queue) {
