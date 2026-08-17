@@ -3,7 +3,7 @@ project("adventures")
 
 # Crea una librería compartida llamada "terminale" a partir de tu main.cpp
 add_library(
-    terminale
+    adventures
     SHARED
     main.cpp
 )
