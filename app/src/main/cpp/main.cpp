@@ -123,6 +123,13 @@ void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana)
 }
 
 // ====================================================================
+// [NUEVO] CALLBACKS DE ENTRADA PARA EVITAR EL ANR (Aplicación no responde)
+// ====================================================================
+void onInputQueueCreated(ANativeActivity* actividad, AInputQueue* queue) {
+    LOGI("Cola de eventos de entrada creada correctamente.");
+}
+
+// ====================================================================
 // PUNTO DE ENTRADA PRINCIPAL DE LA APP DE ANDROID
 // ====================================================================
 void ANativeActivity_onCreate(ANativeActivity* actividad, void* savedState, size_t savedStateSize) {
@@ -141,4 +148,6 @@ void ANativeActivity_onCreate(ANativeActivity* actividad, void* savedState, size
     // Registrar los eventos obligatorios que escuchará nuestro código C++
     actividad->callbacks->onNativeWindowCreated = onNativeWindowCreated;
     actividad->callbacks->onNativeWindowDestroyed = onNativeWindowDestroyed;
+    actividad->callbacks->onInputQueueCreated = onInputQueueCreated;
+    actividad->callbacks->onInputQueueDestroyed = onInputQueueDestroyed;
 }
