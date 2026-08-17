@@ -28,11 +28,15 @@ jobs:
         run: chmod +x gradlew
         continue-on-error: true
 
-      # 4. Compilar el APK de depuración (Gradle detectará tu CMake y compilará el C++ con el NDK automáticamente)
+      # 4. Limpiar caché de compilación anterior de forma automática
+      - name: Limpiar proyecto
+        run: ./gradlew clean
+
+      # 5. Compilar el APK de depuración (Gradle detectará tu CMake y compilará el C++ con el NDK automáticamente)
       - name: Compilar Debug APK
         run: ./gradlew :app:assembleDebug
 
-      # 5. Guardar el archivo APK generado como un artefacto descargable en la interfaz de GitHub
+      # 6. Guardar el archivo APK generado como un artefacto descargable en la interfaz de GitHub
       - name: Subir APK generado
         uses: actions/upload-artifact@v4
         with:
