@@ -16,7 +16,7 @@ find_library(android-lib android)
 
 # Enlaza todo para que funcione correctamente en el APK final
 target_link_libraries(
-    terminale
+    adventures
     ${log-lib}
     ${glesv3-lib}
     ${egl-lib}
