@@ -124,28 +124,17 @@ void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana)
 }
 
 // ====================================================================
-// [NUEVO] CALLBACKS DE ENTRADA PARA EVITAR EL ANR (Aplicación no responde)
+// CALLBACKS DE ENTRADA PARA EVITAR EL ANR (Aplicación no responde)
 // ====================================================================
 void onInputQueueCreated(ANativeActivity* actividad, AInputQueue* queue) {
     LOGI("Cola de eventos de entrada creada correctamente.");
+    // Si necesitas asociar la cola al looper del hilo principal sin usar android_poll_source:
+    AInputQueue_attachLooper(queue, ALooper_forThread(ALOOPER_PREPARE_ALLOW_NON_CALLBACK), 1, nullptr, nullptr);
 }
 
 void onInputQueueDestroyed(ANativeActivity* actividad, AInputQueue* queue) {
     LOGI("Cola de eventos de entrada destruida.");
-}
-
-// Añade esta función para procesar los eventos pendientes del sistema sin bloquear la app
-void procesarEventosSistema(ANativeActivity* actividad) {
-    int ident;
-    int events;
-    android_poll_source* source; // O usando ALooper_pollAll directamente si manejas el looper nativo
-
-    // Bucle no bloqueante para vaciar la cola de eventos de entrada y evitar el ANR
-    while ((ident = ALooper_pollAll(0, nullptr, &events, (void**)&source)) >= 0) {
-        if (source != nullptr) {
-            // source->process(actividad, source); // Si usas la estructura app_glue
-        }
-    }
+    AInputQueue_detachLooper(queue);
 }
 
 // ====================================================================
