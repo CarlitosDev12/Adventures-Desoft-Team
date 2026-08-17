@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace 'com.carlos.terminale'
+    namespace 'com.desoft.adventures'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.carlos.terminale"
+        applicationId "com.desoft.adventures"
         minSdk 21
         targetSdk 34
         versionCode 1
