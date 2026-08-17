@@ -83,23 +83,23 @@ void limpiarRecursos(EstadoApp* estado) {
 
 // Esta función lee los mensajes del procesador. Si el usuario toca la pantalla,
 // se procesa el toque. Si no hay nada que hacer, ¡dibujamos en OpenGL!
-void procesarEventosYDibujar(ANativeActivity* actividad) {
-    EstadoApp* estado = (EstadoApp*)actividad->instance;
+//void procesarEventosYDibujar(ANativeActivity* actividad) {
+//  EstadoApp* estado = (EstadoApp*)actividad->instance;
     
     // Dibujamos el cuadro blanco sin bloquear el hilo
-    if (estado->activa) {
-        static auto ultimoTiempo = std::chrono::high_resolution_clock::now();
+//  if (estado->activa) {
+//      static auto ultimoTiempo = std::chrono::high_resolution_clock::now();
         
-        auto ahora = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<float, std::milli> duracion = ahora - ultimoTiempo;
+//      auto ahora = std::chrono::high_resolution_clock::now();
+//      std::chrono::duration<float, std::milli> duracion = ahora - ultimoTiempo;
 
         // Si han pasado al menos ~16.6 milisegundos (60 FPS), dibujamos
-        if (duracion.count() >= 16.6f) {
-            dibujarPantallaBlanca(estado);
-            ultimoTiempo = ahora; // Reiniciamos el cronómetro del frame
-        }
-    }
-}
+//      if (duracion.count() >= 16.6f) {
+//         dibujarPantallaBlanca(estado);
+//        ultimoTiempo = ahora; // Reiniciamos el cronómetro del frame
+//      }
+//  }
+//}
 
 // ====================================================================
 // CALLBACKS DEL CICLO DE VIDA DE ANDROID
@@ -122,10 +122,6 @@ void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana)
     limpiarRecursos(estado);
 }
 
-void onQueueChanged(ANativeActivity* actividad) {
-    procesarEventosYDibujar(actividad);
-}
-
 // ====================================================================
 // PUNTO DE ENTRADA PRINCIPAL DE LA APP DE ANDROID
 // ====================================================================
@@ -145,7 +141,4 @@ void ANativeActivity_onCreate(ANativeActivity* actividad, void* savedState, size
     // Registrar los eventos obligatorios que escuchará nuestro código C++
     actividad->callbacks->onNativeWindowCreated = onNativeWindowCreated;
     actividad->callbacks->onNativeWindowDestroyed = onNativeWindowDestroyed;
-    actividad->callbacks->onQueueChanged = [](ANativeActivity* act) {
-        procesarEventosYDibujar(act);
-    };
 }
