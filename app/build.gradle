@@ -42,7 +42,8 @@ android {
     
     sourceSets {
         main {
-            jniLibs.srcDirs = ['src/main/jniLibs']
+            // Indicar explícitamente a Gradle dónde buscar la salida de CMake
+            jniLibs.srcDirs += ['build/intermediates/cmake/debug/obj']
         }
     }
 }
