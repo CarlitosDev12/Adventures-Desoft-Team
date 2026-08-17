@@ -1,5 +1,6 @@
 #include <android/native_activity.h>
 #include <android/looper.h>
+#include <android/input.h>
 #include <android/log.h>
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
@@ -82,25 +83,35 @@ void limpiarRecursos(EstadoApp* estado) {
     estado->surface = EGL_NO_SURFACE;
 }
 
-// Esta función lee los mensajes del procesador. Si el usuario toca la pantalla,
-// se procesa el toque. Si no hay nada que hacer, ¡dibujamos en OpenGL!
-//void procesarEventosYDibujar(ANativeActivity* actividad) {
-//  EstadoApp* estado = (EstadoApp*)actividad->instance;
+// Bucle activo que procesa los eventos del sistema y dibuja a 60 FPS
+void procesarEventosYDibujar(ANativeActivity* actividad) {
+    EstadoApp* estado = (EstadoApp*)actividad->instance;
     
-    // Dibujamos el cuadro blanco sin bloquear el hilo
-//  if (estado->activa) {
-//      static auto ultimoTiempo = std::chrono::high_resolution_clock::now();
-        
-//      auto ahora = std::chrono::high_resolution_clock::now();
-//      std::chrono::duration<float, std::milli> duracion = ahora - ultimoTiempo;
+    // 1. Procesar eventos de la cola sin bloquear (timeout = 0)
+    int ident;
+    int events;
+    void* source;
+    
+    // Esto lee los eventos táctiles y del sistema al vuelo para evitar el ANR
+    while ((ident = ALooper_pollAll(0, nullptr, &events, &source)) >= 0) {
+        if (ident == ALOOPER_POLL_CALLBACK) {
+            // Manejo de callbacks si los hubiera
+        }
+    }
 
-        // Si han pasado al menos ~16.6 milisegundos (60 FPS), dibujamos
-//      if (duracion.count() >= 16.6f) {
-//         dibujarPantallaBlanca(estado);
-//        ultimoTiempo = ahora; // Reiniciamos el cronómetro del frame
-//      }
-//  }
-//}
+    // 2. Renderizado a 60 FPS si la app está activa
+    if (estado && estado->activa) {
+        static auto ultimoTiempo = std::chrono::high_resolution_clock::now();
+        
+        auto ahora = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<float, std::milli> duracion = ahora - ultimoTiempo;
+
+        if (duracion.count() >= 16.6f) {
+            dibujarPantallaBlanca(estado);
+            ultimoTiempo = ahora; 
+        }
+    }
+}
 
 // ====================================================================
 // CALLBACKS DEL CICLO DE VIDA DE ANDROID
@@ -126,10 +137,16 @@ void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana)
 // ====================================================================
 // CALLBACKS DE ENTRADA PARA EVITAR EL ANR (Aplicación no responde)
 // ====================================================================
+static int loopCallback(int fd, int events, void* data) {
+    ANativeActivity* actividad = static_cast<ANativeActivity*>(data);
+    procesarEventosYDibujar(actividad);
+    return 1; // Retornar 1 mantiene el callback activo en el looper
+}
+
 void onInputQueueCreated(ANativeActivity* actividad, AInputQueue* queue) {
     LOGI("Cola de eventos de entrada creada correctamente.");
-    // Si necesitas asociar la cola al looper del hilo principal sin usar android_poll_source:
-    AInputQueue_attachLooper(queue, ALooper_forThread(ALOOPER_PREPARE_ALLOW_NON_CALLBACK), 1, nullptr, nullptr);
+    // Asocia la cola de entrada al looper actual del hilo principal de forma segura
+    AInputQueue_attachLooper(queue, ALooper_forThread(0), 1, nullptr, nullptr);
 }
 
 void onInputQueueDestroyed(ANativeActivity* actividad, AInputQueue* queue) {
