@@ -129,6 +129,10 @@ void onInputQueueCreated(ANativeActivity* actividad, AInputQueue* queue) {
     LOGI("Cola de eventos de entrada creada correctamente.");
 }
 
+void onInputQueueDestroyed(ANativeActivity* actividad, AInputQueue* queue) {
+    LOGI("Cola de eventos de entrada destruida.");
+}
+
 // ====================================================================
 // PUNTO DE ENTRADA PRINCIPAL DE LA APP DE ANDROID
 // ====================================================================
