@@ -8,6 +8,9 @@ add_library(
     main.cpp
 )
 
+# Forzar al enlazador a conservar el punto de entrada de NativeActivity para que no se elimine en la compilación
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -u ANativeActivity_onCreate")
+
 # Encuentra e incluye las librerías nativas del NDK de Android (OpenGL ES, EGL, Logs y Android nativo)
 find_library(log-lib log)
 find_library(glesv3-lib GLESv3)
