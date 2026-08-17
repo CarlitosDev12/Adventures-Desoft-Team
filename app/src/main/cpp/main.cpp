@@ -146,7 +146,7 @@ static int loopCallback(int fd, int events, void* data) {
 void onInputQueueCreated(ANativeActivity* actividad, AInputQueue* queue) {
     LOGI("Cola de eventos de entrada creada correctamente.");
     // Asocia la cola de entrada al looper actual del hilo principal de forma segura
-    AInputQueue_attachLooper(queue, ALooper_forThread(0), 1, nullptr, nullptr);
+    AInputQueue_attachLooper(queue, ALooper_forThread(), 1, nullptr, nullptr);
 }
 
 void onInputQueueDestroyed(ANativeActivity* actividad, AInputQueue* queue) {
