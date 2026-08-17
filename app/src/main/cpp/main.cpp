@@ -139,15 +139,25 @@ void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana)
 // ====================================================================
 static int loopCallback(int fd, int events, void* data) {
     ANativeActivity* actividad = static_cast<ANativeActivity*>(data);
+    
+    // Procesar todos los eventos pendientes en la cola de entrada
+    AInputEvent* evento = nullptr;
+    while (AInputQueue_getEvent(actividad->inputQueue, &evento) >= 0) {
+        if (AInputQueue_preDispatchEvent(actividad->inputQueue, evento)) {
+            continue;
+        }
+        int handled = 0;
+        // Aquí puedes manejar tus toques si lo deseas, o simplemente consumirlos
+        AInputQueue_finishEvent(actividad->inputQueue, evento, handled);
+    }
+
     procesarEventosYDibujar(actividad);
-    return 1; // Mantiene el callback activo
+    return 1; 
 }
 
 void onInputQueueCreated(ANativeActivity* actividad, AInputQueue* queue) {
     LOGI("Cola de eventos de entrada creada correctamente.");
-    
-    // CORRECCIÓN CLAVE: Asociamos el Looper de la cola utilizando ALOOPER_POLL_CALLBACK
-    // Esto permite que el sistema procese eventos de forma asíncrona sin congelar el hilo principal.
+    // Esto conecta la cola al Looper del hilo principal para evitar el timeout de entrada
     AInputQueue_attachLooper(queue, ALooper_forThread(), ALOOPER_POLL_CALLBACK, loopCallback, actividad);
 }
 
