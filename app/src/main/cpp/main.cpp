@@ -135,18 +135,20 @@ void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana)
 }
 
 // ====================================================================
-// CALLBACKS DE ENTRADA PARA EVITAR EL ANR (Aplicación no responde)
+// CALLBACKS DE ENTRADA Y BUCLE DE EVENTOS (Corregido para evitar ANR)
 // ====================================================================
 static int loopCallback(int fd, int events, void* data) {
     ANativeActivity* actividad = static_cast<ANativeActivity*>(data);
     procesarEventosYDibujar(actividad);
-    return 1; // Retornar 1 mantiene el callback activo en el looper
+    return 1; // Mantiene el callback activo
 }
 
 void onInputQueueCreated(ANativeActivity* actividad, AInputQueue* queue) {
     LOGI("Cola de eventos de entrada creada correctamente.");
-    // Asocia la cola de entrada al looper actual del hilo principal de forma segura
-    AInputQueue_attachLooper(queue, ALooper_forThread(), 1, nullptr, nullptr);
+    
+    // CORRECCIÓN CLAVE: Asociamos el Looper de la cola utilizando ALOOPER_POLL_CALLBACK
+    // Esto permite que el sistema procese eventos de forma asíncrona sin congelar el hilo principal.
+    AInputQueue_attachLooper(queue, ALooper_forThread(), ALOOPER_POLL_CALLBACK, loopCallback, actividad);
 }
 
 void onInputQueueDestroyed(ANativeActivity* actividad, AInputQueue* queue) {
