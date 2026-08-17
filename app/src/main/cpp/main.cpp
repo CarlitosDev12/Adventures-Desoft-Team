@@ -90,7 +90,10 @@ void onNativeWindowCreated(ANativeActivity* actividad, ANativeWindow* ventana) {
     estado->activa = true;
     
     // Dibujar el cuadro blanco inmediatamente al abrirse
-    dibujarPantallaBlanca(estado);
+    while(estado->activa) {
+    	dibujarPantallaBlanca(estado);
+    	usleep(16000);
+    }
 }
 
 // Se ejecuta si el usuario minimiza el juego o bloquea el celular
@@ -120,4 +123,3 @@ void ANativeActivity_onCreate(ANativeActivity* actividad, void* savedState, size
     actividad->callbacks->onNativeWindowCreated = onNativeWindowCreated;
     actividad->callbacks->onNativeWindowDestroyed = onNativeWindowDestroyed;
 }
-
