@@ -79,6 +79,17 @@ void limpiarRecursos(EstadoApp* estado) {
     estado->surface = EGL_NO_SURFACE;
 }
 
+// Esta función lee los mensajes del procesador. Si el usuario toca la pantalla,
+// se procesa el toque. Si no hay nada que hacer, ¡dibujamos en OpenGL!
+void procesarEventosYDibujar(ANativeActivity* actividad) {
+    EstadoApp* estado = (EstadoApp*)actividad->instance;
+    
+    // Dibujamos el cuadro blanco sin bloquear el hilo
+    if (estado->activa) {
+        dibujarPantallaBlanca(estado);
+    }
+}
+
 // ====================================================================
 // CALLBACKS DEL CICLO DE VIDA DE ANDROID
 // ====================================================================
@@ -90,10 +101,7 @@ void onNativeWindowCreated(ANativeActivity* actividad, ANativeWindow* ventana) {
     estado->activa = true;
     
     // Dibujar el cuadro blanco inmediatamente al abrirse
-    while(estado->activa) {
-    	dibujarPantallaBlanca(estado);
-    	usleep(16000);
-    }
+    dibujarPantallaBlanca(estado);
 }
 
 // Se ejecuta si el usuario minimiza el juego o bloquea el celular
@@ -101,6 +109,11 @@ void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana)
     EstadoApp* estado = (EstadoApp*)actividad->instance;
     estado->activa = false;
     limpiarRecursos(estado);
+}
+
+// NUEVO CALLBACK: Se ejecuta cuando la cola de mensajes de Android tiene un respiro
+void onQueueChanged(ANativeActivity* actividad) {
+    procesarEventosYDibujar(actividad);
 }
 
 // ====================================================================
