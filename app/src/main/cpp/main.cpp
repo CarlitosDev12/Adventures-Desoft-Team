@@ -1,4 +1,5 @@
 #include <android/native_activity.h>
+#include <android/looper.h>
 #include <android/log.h>
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
@@ -131,6 +132,20 @@ void onInputQueueCreated(ANativeActivity* actividad, AInputQueue* queue) {
 
 void onInputQueueDestroyed(ANativeActivity* actividad, AInputQueue* queue) {
     LOGI("Cola de eventos de entrada destruida.");
+}
+
+// Añade esta función para procesar los eventos pendientes del sistema sin bloquear la app
+void procesarEventosSistema(ANativeActivity* actividad) {
+    int ident;
+    int events;
+    android_poll_source* source; // O usando ALooper_pollAll directamente si manejas el looper nativo
+
+    // Bucle no bloqueante para vaciar la cola de eventos de entrada y evitar el ANR
+    while ((ident = ALooper_pollAll(0, nullptr, &events, (void**)&source)) >= 0) {
+        if (source != nullptr) {
+            // source->process(actividad, source); // Si usas la estructura app_glue
+        }
+    }
 }
 
 // ====================================================================
