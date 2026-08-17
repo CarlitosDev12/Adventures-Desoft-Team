@@ -3,6 +3,7 @@
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
 #include <stdlib.h>
+#include <chrono>
 
 #define LOG_TAG "AndroidOpenGL"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -49,6 +50,7 @@ void inicializarGráficos(ANativeWindow* ventana, EstadoApp* estado) {
 
     // Activar el lienzo en el hilo de la aplicación
     eglMakeCurrent(estado->display, estado->surface, estado->surface, estado->context);
+    eglSwapInterval(estado->display, 1);
     LOGI("¡OpenGL ES 3.0 activado con éxito a pantalla completa!");
 }
 
@@ -86,7 +88,16 @@ void procesarEventosYDibujar(ANativeActivity* actividad) {
     
     // Dibujamos el cuadro blanco sin bloquear el hilo
     if (estado->activa) {
-        dibujarPantallaBlanca(estado);
+        static auto ultimoTiempo = std::chrono::high_resolution_clock::now();
+        
+        auto ahora = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<float, std::milli> duracion = ahora - ultimoTiempo;
+
+        // Si han pasado al menos ~16.6 milisegundos (60 FPS), dibujamos
+        if (duracion.count() >= 16.6f) {
+            dibujarPantallaBlanca(estado);
+            ultimoTiempo = ahora; // Reiniciamos el cronómetro del frame
+        }
     }
 }
 
@@ -111,7 +122,6 @@ void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana)
     limpiarRecursos(estado);
 }
 
-// NUEVO CALLBACK: Se ejecuta cuando la cola de mensajes de Android tiene un respiro
 void onQueueChanged(ANativeActivity* actividad) {
     procesarEventosYDibujar(actividad);
 }
@@ -135,4 +145,7 @@ void ANativeActivity_onCreate(ANativeActivity* actividad, void* savedState, size
     // Registrar los eventos obligatorios que escuchará nuestro código C++
     actividad->callbacks->onNativeWindowCreated = onNativeWindowCreated;
     actividad->callbacks->onNativeWindowDestroyed = onNativeWindowDestroyed;
+    actividad->callbacks->onQueueChanged = [](ANativeActivity* act) {
+        procesarEventosYDibujar(act);
+    };
 }
