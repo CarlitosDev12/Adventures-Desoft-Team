@@ -83,32 +83,19 @@ void limpiarRecursos(EstadoApp* estado) {
     estado->surface = EGL_NO_SURFACE;
 }
 
-// Bucle activo que procesa los eventos del sistema y dibuja a 60 FPS
+// 2. FUNCIÓN DE RENDERIZADO Y CONTROL (Sin llamadas recursivas al looper)
 void procesarEventosYDibujar(ANativeActivity* actividad) {
     EstadoApp* estado = (EstadoApp*)actividad->instance;
-    
-    // 1. Procesar eventos de la cola sin bloquear (timeout = 0)
-    int ident;
-    int events;
-    void* source;
-    
-    // Esto lee los eventos táctiles y del sistema al vuelo para evitar el ANR
-    while ((ident = ALooper_pollAll(0, nullptr, &events, &source)) >= 0) {
-        if (ident == ALOOPER_POLL_CALLBACK) {
-            // Manejo de callbacks si los hubiera
-        }
-    }
 
-    // 2. Renderizado a 60 FPS si la app está activa
+    // Renderizado a 60 FPS si la app está activa
     if (estado && estado->activa) {
         static auto ultimoTiempo = std::chrono::high_resolution_clock::now();
-        
         auto ahora = std::chrono::high_resolution_clock::now();
         std::chrono::duration<float, std::milli> duracion = ahora - ultimoTiempo;
 
         if (duracion.count() >= 16.6f) {
             dibujarPantallaBlanca(estado);
-            ultimoTiempo = ahora; 
+            ultimoTiempo = ahora;
         }
     }
 }
@@ -138,18 +125,23 @@ void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana)
 // CALLBACKS DE ENTRADA Y BUCLE DE EVENTOS (Corregido para evitar ANR)
 // ====================================================================
 static int loopCallback(int fd, int events, void* data) {
-    ANativeActivity* actividad = static_cast<ANativeActivity*>(data);
+    AInputQueue* queue = static_cast<AInputQueue*>(data);
+    AInputEvent* evento = nullptr;
+
+    while (AInputQueue_getEvent(queue, &evento) >= 0) {
+        if (AInputQueue_preDispatchEvent(queue, evento)) {
+            continue;
+        }
+        int handled = 0;
+        AInputQueue_finishEvent(queue, evento, handled);
+    }
     
-    // LÍNEA MODIFICADA: Llamada limpia sin variables inexistentes
-    procesarEventosYDibujar(actividad);
-    
-    return 1; // Mantener activo el looper
+    return 1; 
 }
 
 void onInputQueueCreated(ANativeActivity* actividad, AInputQueue* queue) {
     LOGI("Cola de eventos de entrada creada correctamente.");
-    // Esto conecta la cola al Looper del hilo principal para evitar el timeout de entrada
-    AInputQueue_attachLooper(queue, ALooper_forThread(), ALOOPER_POLL_CALLBACK, loopCallback, actividad);
+    AInputQueue_attachLooper(queue, ALooper_forThread(), ALOOPER_POLL_CALLBACK, loopCallback, queue);
 }
 
 void onInputQueueDestroyed(ANativeActivity* actividad, AInputQueue* queue) {
