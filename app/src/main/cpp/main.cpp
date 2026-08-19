@@ -5,6 +5,7 @@
 #include <vulkan/vulkan.h>
 #include "VkBootstrap.h" // Nuestra librería auxiliar de Vulkan
 #include "VkBootstrapDispatch.h"
+#include "VkBootstrapFeatureChain.h"
 #include <stdlib.h>
 #include <thread>
 #include <atomic>
