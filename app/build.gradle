@@ -8,6 +8,7 @@ android {
 
     defaultConfig {
         applicationId "com.desoft.adventures"
+        ndkVersion "26.1.10909125"
         minSdk 24
         targetSdk 34
         versionCode 1
