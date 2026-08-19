@@ -3,9 +3,9 @@
 #include <android/input.h>
 #include <android/log.h>
 #include <vulkan/vulkan.h>
-#include "VkBootstrap.h" // Nuestra librería auxiliar de Vulkan
-#include "VkBootstrapDispatch.h"
-#include "VkBootstrapFeatureChain.h"
+#include "VkBootstrap.h" // Nuestra librería auxiliar de Vulkan[span_1](start_span)[span_1](end_span)
+#include "VkBootstrapDispatch.h[span_2](start_span)"[span_2](end_span)
+// Elimina la línea de VkBootstrapFeatureChain.h
 #include <stdlib.h>
 #include <thread>
 #include <atomic>
