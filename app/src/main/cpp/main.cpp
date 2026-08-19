@@ -72,21 +72,30 @@ void limpiarRecursos(EstadoApp* estado) {
     LOGI("Recursos gráficos liberados.");
 }
 
-// 2. EL BUCLE DE RENDERIZADO (Corre en su propio hilo de forma fluida)
+// 2. EL BUCLE DE RENDERIZADO CORREGIDO Y SEGURO
 void bucleDeRenderizado(EstadoApp* estado) {
-    LOGI("Hilo de renderizado lanzado.");
+    LOGI("Hilo de renderizado lanzado. Esperando ventana...");
     
-    // Inicializamos EGL de forma segura dentro del hilo dedicado
+    // Esperar brevemente o validar que la ventana no sea nula antes de iniciar EGL
+    while (estado->ejecutando && estado->ventanaActual == nullptr) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    if (!estado->ejecutando) return;
+
+    // Inicializamos EGL de forma segura con la ventana ya validada
     inicializarGráficos(estado->ventanaActual, estado);
 
-    // El Loop de verdad: Se ejecuta de manera continua y eficiente
+    // El Loop de renderizado controlado
     while (estado->ejecutando) {
-        // --- AQUÍ IRÁ TU LÓGICA DE DIBUJO Y JUEGO ---
+        // --- LÓGICA DE DIBUJO ---
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         
-        // eglSwapBuffers pausa inteligentemente este hilo hasta el siguiente ciclo de VSync
-        eglSwapBuffers(estado->display, estado->surface);
+        // Intercambiar buffers de forma segura
+        if (estado->display != EGL_NO_DISPLAY && estado->surface != EGL_NO_SURFACE) {
+            eglSwapBuffers(estado->display, estado->surface);
+        }
     }
 
     // Limpieza al salir del loop
