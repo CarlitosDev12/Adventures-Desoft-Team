@@ -11,21 +11,18 @@
 #define LOG_TAG "AndroidOpenGL"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-// Estructura contenedora para gestionar el estado y el hilo de la App
 struct EstadoApp {
     EGLDisplay display;
     EGLSurface surface;
     EGLContext context;
     
-    // Control del hilo de renderizado
     std::atomic<bool> ejecutando;
-    std::thread hiloRender;
+    std::thread hiloRender; // Se gestionará su ciclo de vida manualmente
     ANativeWindow* ventanaActual;
 };
 
-// 1. FUNCIÓN PARA ENLAZAR LA TARJETA DE VIDEO (EGL)
 void inicializarGráficos(ANativeWindow* ventana, EstadoApp* estado) {
-    LOGI("Configurando EGL para pantalla completa en hilo independiente...");
+    LOGI("Configurando EGL en hilo independiente...");
     
     estado->display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     eglInitialize(estado->display, nullptr, nullptr);
@@ -46,19 +43,17 @@ void inicializarGráficos(ANativeWindow* ventana, EstadoApp* estado) {
     estado->surface = eglCreateWindowSurface(estado->display, config, (EGLNativeWindowType)ventana, nullptr);
     
     const EGLint contextoAtributos[] = {
-      EGL_CONTEXT_CLIENT_VERSION, 3, // OpenGL ES 3.0
+      EGL_CONTEXT_CLIENT_VERSION, 3, 
       EGL_NONE
     };
     estado->context = eglCreateContext(estado->display, config, EGL_NO_CONTEXT, contextoAtributos);
 
-    // Activar el contexto gráfico en este hilo específico
     eglMakeCurrent(estado->display, estado->surface, estado->surface, estado->context);
-    eglSwapInterval(estado->display, 1); // Sincronización VSync (60Hz / 120Hz)
+    eglSwapInterval(estado->display, 1); 
     
-    LOGI("¡OpenGL ES 3.0 activado con éxito en el hilo de renderizado!");
+    LOGI("¡OpenGL ES 3.0 activado con éxito!");
 }
 
-// 3. LIBERAR MEMORIA AL SALIR
 void limpiarRecursos(EstadoApp* estado) {
     if (estado->display != EGL_NO_DISPLAY) {
         eglMakeCurrent(estado->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -72,59 +67,56 @@ void limpiarRecursos(EstadoApp* estado) {
     LOGI("Recursos gráficos liberados.");
 }
 
-// 2. EL BUCLE DE RENDERIZADO CORREGIDO Y SEGURO
 void bucleDeRenderizado(EstadoApp* estado) {
-    LOGI("Hilo de renderizado lanzado. Esperando ventana...");
+    LOGI("Hilo de renderizado lanzado.");
     
-    // Esperar brevemente o validar que la ventana no sea nula antes de iniciar EGL
     while (estado->ejecutando && estado->ventanaActual == nullptr) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
     if (!estado->ejecutando) return;
 
-    // Inicializamos EGL de forma segura con la ventana ya validada
     inicializarGráficos(estado->ventanaActual, estado);
 
-    // El Loop de renderizado controlado
     while (estado->ejecutando) {
-        // --- LÓGICA DE DIBUJO ---
-        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+        // Renderizado básico (Fondo Verde Azulado para verificar cambios)
+        glClearColor(0.0f, 0.5f, 0.5f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         
-        // Intercambiar buffers de forma segura
         if (estado->display != EGL_NO_DISPLAY && estado->surface != EGL_NO_SURFACE) {
             eglSwapBuffers(estado->display, estado->surface);
         }
     }
 
-    // Limpieza al salir del loop
     limpiarRecursos(estado);
-    LOGI("Hilo de renderizado finalizado correctamente.");
+    LOGI("Hilo de renderizado finalizado limpiamente.");
 }
 
 // ====================================================================
-// CALLBACKS DEL CICLO DE VIDA DE ANDROID
+// CALLBACKS DEL CICLO DE VIDA
 // ====================================================================
 
 void onNativeWindowCreated(ANativeActivity* actividad, ANativeWindow* ventana) {
+    LOGI("Ventana creada.");
     EstadoApp* estado = (EstadoApp*)actividad->instance;
     
     estado->ventanaActual = ventana;
     estado->ejecutando = true;
     
-    // Lanzamos el hilo de renderizado en paralelo al hilo principal de Android
+    // Asegurar que el objeto thread anterior esté limpio antes de reasignar
+    if (estado->hiloRender.joinable()) {
+        estado->hiloRender.join();
+    }
+    
     estado->hiloRender = std::thread(bucleDeRenderizado, estado);
 }
 
 void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana) {
+    LOGI("Ventana destruida.");
     EstadoApp* estado = (EstadoApp*)actividad->instance;
     
     if (estado->ejecutando) {
-        // Ordenamos detener el bucle
         estado->ejecutando = false;
-        
-        // Esperamos a que el hilo termine de forma limpia antes de destruir la ventana
         if (estado->hiloRender.joinable()) {
             estado->hiloRender.join();
         }
@@ -132,8 +124,23 @@ void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana)
     estado->ventanaActual = nullptr;
 }
 
+// Liberación absoluta de memoria al cerrar la app
+void onDestroy(ANativeActivity* actividad) {
+    LOGI("Destruyendo actividad nativa. Liberando estructuras...");
+    EstadoApp* estado = (EstadoApp*)actividad->instance;
+    
+    if (estado) {
+        if (estado->hiloRender.joinable()) {
+            estado->ejecutando = false;
+            estado->hiloRender.join();
+        }
+        free(estado);
+        actividad->instance = nullptr;
+    }
+}
+
 // ====================================================================
-// CALLBACKS DE ENTRADA (Eventos táctiles)
+// EVENTOS DE ENTRADA
 // ====================================================================
 static int loopCallback(int fd, int events, void* data) {
     AInputQueue* queue = static_cast<AInputQueue*>(data);
@@ -143,28 +150,24 @@ static int loopCallback(int fd, int events, void* data) {
         if (AInputQueue_preDispatchEvent(queue, evento)) {
             continue;
         }
-        int handled = 0;
-        // Aquí puedes procesar toques si lo deseas en el futuro
-        AInputQueue_finishEvent(queue, evento, handled);
+        AInputQueue_finishEvent(queue, evento, 0);
     }
     return 1; 
 }
 
 void onInputQueueCreated(ANativeActivity* actividad, AInputQueue* queue) {
-    LOGI("Cola de eventos de entrada creada.");
     AInputQueue_attachLooper(queue, ALooper_forThread(), ALOOPER_POLL_CALLBACK, loopCallback, queue);
 }
 
 void onInputQueueDestroyed(ANativeActivity* actividad, AInputQueue* queue) {
-    LOGI("Cola de eventos de entrada destruida.");
     AInputQueue_detachLooper(queue);
 }
 
 // ====================================================================
-// PUNTO DE ENTRADA PRINCIPAL
+// PUNTO DE ENTRADA
 // ====================================================================
 void ANativeActivity_onCreate(ANativeActivity* actividad, void* savedState, size_t savedStateSize) {
-    LOGI("Iniciando actividad nativa de Android...");
+    LOGI("Iniciando ANativeActivity...");
 
     EstadoApp* estado = (EstadoApp*)malloc(sizeof(EstadoApp));
     estado->display = EGL_NO_DISPLAY;
@@ -172,6 +175,9 @@ void ANativeActivity_onCreate(ANativeActivity* actividad, void* savedState, size
     estado->context = EGL_NO_CONTEXT;
     estado->ejecutando = false;
     estado->ventanaActual = nullptr;
+    
+    // El constructor por defecto de std::thread no inicializa un hilo activo, es seguro.
+    new (&estado->hiloRender) std::thread(); 
 
     actividad->instance = estado;
 
@@ -179,4 +185,5 @@ void ANativeActivity_onCreate(ANativeActivity* actividad, void* savedState, size
     actividad->callbacks->onNativeWindowDestroyed = onNativeWindowDestroyed;
     actividad->callbacks->onInputQueueCreated = onInputQueueCreated;
     actividad->callbacks->onInputQueueDestroyed = onInputQueueDestroyed;
+    actividad->callbacks->onDestroy = onDestroy; // Callback asignado para evitar memory leaks
 }
