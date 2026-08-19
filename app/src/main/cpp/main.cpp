@@ -5,27 +5,31 @@
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
 #include <stdlib.h>
-#include <chrono>
+#include <thread>
+#include <atomic>
 
 #define LOG_TAG "AndroidOpenGL"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-// Estructura contenedora para gestionar el estado gráfico de la App
+// Estructura contenedora para gestionar el estado y el hilo de la App
 struct EstadoApp {
     EGLDisplay display;
     EGLSurface surface;
     EGLContext context;
-    bool activa;
+    
+    // Control del hilo de renderizado
+    std::atomic<bool> ejecutando;
+    std::thread hiloRender;
+    ANativeWindow* ventanaActual;
 };
 
 // 1. FUNCIÓN PARA ENLAZAR LA TARJETA DE VIDEO (EGL)
 void inicializarGráficos(ANativeWindow* ventana, EstadoApp* estado) {
-    LOGI("Configurando EGL para pantalla completa...");
+    LOGI("Configurando EGL para pantalla completa en hilo independiente...");
     
     estado->display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     eglInitialize(estado->display, nullptr, nullptr);
 
-    // Definir formato de color nativo del celular (RGBA de 8 bits por canal)
     const EGLint atributos[] = {
         EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
@@ -39,35 +43,19 @@ void inicializarGráficos(ANativeWindow* ventana, EstadoApp* estado) {
     EGLint numConfigs;
     eglChooseConfig(estado->display, atributos, &config, 1, &numConfigs);
 
-    // Forzar a que el buffer se adapte al tamaño real de la pantalla del móvil
-    eglMakeCurrent(estado->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-
-    // CORRECCIÓN: Casteo explícito a EGLNativeWindowType
     estado->surface = eglCreateWindowSurface(estado->display, config, (EGLNativeWindowType)ventana, nullptr);
+    
     const EGLint contextoAtributos[] = {
       EGL_CONTEXT_CLIENT_VERSION, 3, // OpenGL ES 3.0
       EGL_NONE
     };
     estado->context = eglCreateContext(estado->display, config, EGL_NO_CONTEXT, contextoAtributos);
 
-    // Activar el lienzo en el hilo de la aplicación
+    // Activar el contexto gráfico en este hilo específico
     eglMakeCurrent(estado->display, estado->surface, estado->surface, estado->context);
-    eglSwapInterval(estado->display, 1);
-    LOGI("¡OpenGL ES 3.0 activado con éxito a pantalla completa!");
-}
-
-// 2. FUNCIÓN DE RENDERIZADO (El motor gráfico)
-void dibujarPantallaBlanca(EstadoApp* estado) {
-    if (estado->display == EGL_NO_DISPLAY || estado->surface == EGL_NO_SURFACE) return;
-
-    // Comando de OpenGL puro: Definir color de limpieza a BLANCO absoluto (1.0f)
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+    eglSwapInterval(estado->display, 1); // Sincronización VSync (60Hz / 120Hz)
     
-    // Limpiar el lienzo aplicando el color blanco
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    // Intercambiar los buffers de video para mostrar el cuadro en el teléfono
-    eglSwapBuffers(estado->display, estado->surface);
+    LOGI("¡OpenGL ES 3.0 activado con éxito en el hilo de renderizado!");
 }
 
 // 3. LIBERAR MEMORIA AL SALIR
@@ -81,48 +69,62 @@ void limpiarRecursos(EstadoApp* estado) {
     estado->display = EGL_NO_DISPLAY;
     estado->context = EGL_NO_CONTEXT;
     estado->surface = EGL_NO_SURFACE;
+    LOGI("Recursos gráficos liberados.");
 }
 
-// 2. FUNCIÓN DE RENDERIZADO Y CONTROL (Sin llamadas recursivas al looper)
-void procesarEventosYDibujar(ANativeActivity* actividad) {
-    EstadoApp* estado = (EstadoApp*)actividad->instance;
+// 2. EL BUCLE DE RENDERIZADO (Corre en su propio hilo de forma fluida)
+void bucleDeRenderizado(EstadoApp* estado) {
+    LOGI("Hilo de renderizado lanzado.");
+    
+    // Inicializamos EGL de forma segura dentro del hilo dedicado
+    inicializarGráficos(estado->ventanaActual, estado);
 
-    // Renderizado a 60 FPS si la app está activa
-    if (estado && estado->activa) {
-        static auto ultimoTiempo = std::chrono::high_resolution_clock::now();
-        auto ahora = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<float, std::milli> duracion = ahora - ultimoTiempo;
-
-        if (duracion.count() >= 16.6f) {
-            dibujarPantallaBlanca(estado);
-            ultimoTiempo = ahora;
-        }
+    // El Loop de verdad: Se ejecuta de manera continua y eficiente
+    while (estado->ejecutando) {
+        // --- AQUÍ IRÁ TU LÓGICA DE DIBUJO Y JUEGO ---
+        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        
+        // eglSwapBuffers pausa inteligentemente este hilo hasta el siguiente ciclo de VSync
+        eglSwapBuffers(estado->display, estado->surface);
     }
+
+    // Limpieza al salir del loop
+    limpiarRecursos(estado);
+    LOGI("Hilo de renderizado finalizado correctamente.");
 }
 
 // ====================================================================
 // CALLBACKS DEL CICLO DE VIDA DE ANDROID
 // ====================================================================
 
-// Se ejecuta cuando Android le asigna una ventana física a la aplicación
 void onNativeWindowCreated(ANativeActivity* actividad, ANativeWindow* ventana) {
     EstadoApp* estado = (EstadoApp*)actividad->instance;
-    inicializarGráficos(ventana, estado);
-    estado->activa = true;
     
-    // Dibujar el cuadro blanco inmediatamente al abrirse
-    dibujarPantallaBlanca(estado);
+    estado->ventanaActual = ventana;
+    estado->ejecutando = true;
+    
+    // Lanzamos el hilo de renderizado en paralelo al hilo principal de Android
+    estado->hiloRender = std::thread(bucleDeRenderizado, estado);
 }
 
-// Se ejecuta si el usuario minimiza el juego o bloquea el celular
 void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana) {
     EstadoApp* estado = (EstadoApp*)actividad->instance;
-    estado->activa = false;
-    limpiarRecursos(estado);
+    
+    if (estado->ejecutando) {
+        // Ordenamos detener el bucle
+        estado->ejecutando = false;
+        
+        // Esperamos a que el hilo termine de forma limpia antes de destruir la ventana
+        if (estado->hiloRender.joinable()) {
+            estado->hiloRender.join();
+        }
+    }
+    estado->ventanaActual = nullptr;
 }
 
 // ====================================================================
-// CALLBACKS DE ENTRADA Y BUCLE DE EVENTOS (Corregido para evitar ANR)
+// CALLBACKS DE ENTRADA (Eventos táctiles)
 // ====================================================================
 static int loopCallback(int fd, int events, void* data) {
     AInputQueue* queue = static_cast<AInputQueue*>(data);
@@ -133,14 +135,14 @@ static int loopCallback(int fd, int events, void* data) {
             continue;
         }
         int handled = 0;
+        // Aquí puedes procesar toques si lo deseas en el futuro
         AInputQueue_finishEvent(queue, evento, handled);
     }
-    
     return 1; 
 }
 
 void onInputQueueCreated(ANativeActivity* actividad, AInputQueue* queue) {
-    LOGI("Cola de eventos de entrada creada correctamente.");
+    LOGI("Cola de eventos de entrada creada.");
     AInputQueue_attachLooper(queue, ALooper_forThread(), ALOOPER_POLL_CALLBACK, loopCallback, queue);
 }
 
@@ -150,22 +152,20 @@ void onInputQueueDestroyed(ANativeActivity* actividad, AInputQueue* queue) {
 }
 
 // ====================================================================
-// PUNTO DE ENTRADA PRINCIPAL DE LA APP DE ANDROID
+// PUNTO DE ENTRADA PRINCIPAL
 // ====================================================================
 void ANativeActivity_onCreate(ANativeActivity* actividad, void* savedState, size_t savedStateSize) {
-    LOGI("Iniciando ciclo de vida nativo de la aplicacion...");
+    LOGI("Iniciando actividad nativa de Android...");
 
-    // Asignar memoria para guardar nuestro estado gráfico
     EstadoApp* estado = (EstadoApp*)malloc(sizeof(EstadoApp));
     estado->display = EGL_NO_DISPLAY;
     estado->surface = EGL_NO_SURFACE;
     estado->context = EGL_NO_CONTEXT;
-    estado->activa = false;
+    estado->ejecutando = false;
+    estado->ventanaActual = nullptr;
 
-    // Guardar la estructura dentro de la instancia de la actividad de Android
     actividad->instance = estado;
 
-    // Registrar los eventos obligatorios que escuchará nuestro código C++
     actividad->callbacks->onNativeWindowCreated = onNativeWindowCreated;
     actividad->callbacks->onNativeWindowDestroyed = onNativeWindowDestroyed;
     actividad->callbacks->onInputQueueCreated = onInputQueueCreated;
