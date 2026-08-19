@@ -2,68 +2,93 @@
 #include <android/looper.h>
 #include <android/input.h>
 #include <android/log.h>
-#include <EGL/egl.h>
-#include <GLES3/gl3.h>
+#include <vulkan/vulkan.h>
+#include "VkBootstrap.h" // Nuestra librería auxiliar de Vulkan
 #include <stdlib.h>
 #include <thread>
 #include <atomic>
 
-#define LOG_TAG "AndroidOpenGL"
+#define LOG_TAG "AndroidVulkan"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 struct EstadoApp {
-    EGLDisplay display;
-    EGLSurface surface;
-    EGLContext context;
+    // Reemplazamos las variables de EGL por las de Vulkan y vk-bootstrap
+    VkInstance instancia;
+    VkDebugUtilsMessengerEXT debugMessenger;
+    VkPhysicalDevice dispositivoFisico;
+    VkDevice dispositivoLogico;
+    VkSurfaceKHR superficie;
     
     std::atomic<bool> ejecutando;
-    std::thread hiloRender; // Se gestionará su ciclo de vida manualmente
+    std::thread hiloRender;
     ANativeWindow* ventanaActual;
 };
 
-void inicializarGráficos(ANativeWindow* ventana, EstadoApp* estado) {
-    LOGI("Configurando EGL en hilo independiente...");
+void inicializarGráficosVulkan(ANativeWindow* ventana, EstadoApp* estado) {
+    LOGI("Configurando Vulkan con vk-bootstrap en hilo independiente...");
     
-    estado->display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    eglInitialize(estado->display, nullptr, nullptr);
-
-    const EGLint atributos[] = {
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
-        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-        EGL_BLUE_SIZE, 8,
-        EGL_GREEN_SIZE, 8,
-        EGL_RED_SIZE, 8,
-        EGL_NONE
-    };
-
-    EGLConfig config;
-    EGLint numConfigs;
-    eglChooseConfig(estado->display, atributos, &config, 1, &numConfigs);
-
-    estado->surface = eglCreateWindowSurface(estado->display, config, (EGLNativeWindowType)ventana, nullptr);
+    // 1. Crear Instancia de Vulkan
+    vkb::InstanceBuilder builder;
+    auto inst_ret = builder.set_app_name("JuegoVulkanNativo")
+                           .request_validation_layers(true)
+                           .use_default_debug_messenger()
+                           .build();
+                           
+    if (!inst_ret) {
+        LOGI("Error al crear la instancia de Vulkan: %s", inst_ret.error().message().c_str());
+        return;
+    }
     
-    const EGLint contextoAtributos[] = {
-      EGL_CONTEXT_CLIENT_VERSION, 3, 
-      EGL_NONE
-    };
-    estado->context = eglCreateContext(estado->display, config, EGL_NO_CONTEXT, contextoAtributos);
+    vkb::Instance vkb_inst = inst_ret.value();
+    estado->instancia = vkb_inst.instance;
+    estado->debugMessenger = vkb_inst.debug_messenger;
 
-    eglMakeCurrent(estado->display, estado->surface, estado->surface, estado->context);
-    eglSwapInterval(estado->display, 1); 
+    // 2. Crear la Superficie de Android para la ventana nativa
+    VkAndroidSurfaceCreateInfoKHR surfaceCreateInfo = {};
+    surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
+    surfaceCreateInfo.window = ventana;
+
+    if (vkCreateAndroidSurfaceKHR(estado->instancia, &surfaceCreateInfo, nullptr, &estado->superficie) != VK_SUCCESS) {
+        LOGI("¡Error al crear la superficie Android para Vulkan!");
+        return;
+    }
+
+    // 3. Seleccionar Dispositivo Físico y crear Dispositivo Lógico con vk-bootstrap
+    vkb::PhysicalDeviceSelector phys_device_selector(vkb_inst);
+    auto phys_ret = phys_device_selector.set_surface(estado->superficie).select();
+    if (!phys_ret) {
+        LOGI("Error al seleccionar la tarjeta gráfica: %s", phys_ret.error().message().c_str());
+        return;
+    }
     
-    LOGI("¡OpenGL ES 3.0 activado con éxito!");
+    vkb::PhysicalDevice vkb_physical_device = phys_ret.value();
+    estado->dispositivoFisico = vkb_physical_device.physical_device;
+
+    vkb::DeviceBuilder device_builder(vkb_physical_device);
+    auto dev_ret = device_builder.build();
+    if (!dev_ret) {
+        LOGI("Error al crear el dispositivo lógico: %s", dev_ret.error().message().c_str());
+        return;
+    }
+    
+    vkb::Device vkb_device = dev_ret.value();
+    estado->dispositivoLogico = vkb_device.device;
+
+    LOGI("¡Vulkan inicializado con éxito usando vk-bootstrap!");
 }
 
 void limpiarRecursos(EstadoApp* estado) {
-    if (estado->display != EGL_NO_DISPLAY) {
-        eglMakeCurrent(estado->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-        if (estado->context != EGL_NO_CONTEXT) eglDestroyContext(estado->display, estado->context);
-        if (estado->surface != EGL_NO_SURFACE) eglDestroySurface(estado->display, estado->surface);
-        eglTerminate(estado->display);
+    LOGI("Liberando recursos de Vulkan...");
+    if (estado->dispositivoLogico != VK_NULL_HANDLE) {
+        vkDestroyDevice(estado->dispositivoLogico, nullptr);
     }
-    estado->display = EGL_NO_DISPLAY;
-    estado->context = EGL_NO_CONTEXT;
-    estado->surface = EGL_NO_SURFACE;
+    if (estado->superficie != VK_NULL_HANDLE && estado->instancia != VK_NULL_HANDLE) {
+        vkDestroySurfaceKHR(estado->instancia, estado->superficie, nullptr);
+    }
+    vkb::destroy_debug_utils_messenger(estado->instancia, estado->debugMessenger);
+    if (estado->instancia != VK_NULL_HANDLE) {
+        vkDestroyInstance(estado->instancia, nullptr);
+    }
     LOGI("Recursos gráficos liberados.");
 }
 
@@ -76,16 +101,13 @@ void bucleDeRenderizado(EstadoApp* estado) {
 
     if (!estado->ejecutando) return;
 
-    inicializarGráficos(estado->ventanaActual, estado);
+    // Inicializamos Vulkan usando la ventana actual de Android
+    inicializarGráficosVulkan(estado->ventanaActual, estado);
 
     while (estado->ejecutando) {
-        // Renderizado básico (Fondo celeste para verificar cambios)
-        glClearColor(0.258f, 0.596f, 0.960f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        
-        if (estado->display != EGL_NO_DISPLAY && estado->surface != EGL_NO_SURFACE) {
-            eglSwapBuffers(estado->display, estado->surface);
-        }
+        // Aquí en el futuro iría la grabación y envío de Command Buffers de Vulkan
+        // Por ahora dejamos el hilo corriendo de forma estable
+        std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 FPS simulados
     }
 
     limpiarRecursos(estado);
@@ -93,7 +115,7 @@ void bucleDeRenderizado(EstadoApp* estado) {
 }
 
 // ====================================================================
-// CALLBACKS DEL CICLO DE VIDA
+// CALLBACKS DEL CICLO DE VIDA (Idénticos a tu estructura original)
 // ====================================================================
 
 void onNativeWindowCreated(ANativeActivity* actividad, ANativeWindow* ventana) {
@@ -103,7 +125,6 @@ void onNativeWindowCreated(ANativeActivity* actividad, ANativeWindow* ventana) {
     estado->ventanaActual = ventana;
     estado->ejecutando = true;
     
-    // Asegurar que el objeto thread anterior esté limpio antes de reasignar
     if (estado->hiloRender.joinable()) {
         estado->hiloRender.join();
     }
@@ -124,7 +145,6 @@ void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana)
     estado->ventanaActual = nullptr;
 }
 
-// Liberación absoluta de memoria al cerrar la app
 void onDestroy(ANativeActivity* actividad) {
     LOGI("Destruyendo actividad nativa. Liberando estructuras...");
     EstadoApp* estado = (EstadoApp*)actividad->instance;
@@ -167,16 +187,17 @@ void onInputQueueDestroyed(ANativeActivity* actividad, AInputQueue* queue) {
 // PUNTO DE ENTRADA
 // ====================================================================
 void ANativeActivity_onCreate(ANativeActivity* actividad, void* savedState, size_t savedStateSize) {
-    LOGI("Iniciando ANativeActivity...");
+    LOGI("Iniciando ANativeActivity con Vulkan...");
 
     EstadoApp* estado = (EstadoApp*)malloc(sizeof(EstadoApp));
-    estado->display = EGL_NO_DISPLAY;
-    estado->surface = EGL_NO_SURFACE;
-    estado->context = EGL_NO_CONTEXT;
+    estado->instancia = VK_NULL_HANDLE;
+    estado->debugMessenger = VK_NULL_HANDLE;
+    estado->dispositivoFisico = VK_NULL_HANDLE;
+    estado->dispositivoLogico = VK_NULL_HANDLE;
+    estado->superficie = VK_NULL_HANDLE;
     estado->ejecutando = false;
     estado->ventanaActual = nullptr;
     
-    // El constructor por defecto de std::thread no inicializa un hilo activo, es seguro.
     new (&estado->hiloRender) std::thread(); 
 
     actividad->instance = estado;
@@ -185,5 +206,5 @@ void ANativeActivity_onCreate(ANativeActivity* actividad, void* savedState, size
     actividad->callbacks->onNativeWindowDestroyed = onNativeWindowDestroyed;
     actividad->callbacks->onInputQueueCreated = onInputQueueCreated;
     actividad->callbacks->onInputQueueDestroyed = onInputQueueDestroyed;
-    actividad->callbacks->onDestroy = onDestroy; // Callback asignado para evitar memory leaks
+    actividad->callbacks->onDestroy = onDestroy;
 }
