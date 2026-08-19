@@ -80,7 +80,7 @@ void bucleDeRenderizado(EstadoApp* estado) {
 
     while (estado->ejecutando) {
         // Renderizado básico (Fondo celeste para verificar cambios)
-        glClearColor(66.0f / 255.0f, 152.0f / 255.0f, 245.0f / 255.0f, 1.0f);
+        glClearColor(0.258f, 0.596f, 0.960f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         
         if (estado->display != EGL_NO_DISPLAY && estado->surface != EGL_NO_SURFACE) {
