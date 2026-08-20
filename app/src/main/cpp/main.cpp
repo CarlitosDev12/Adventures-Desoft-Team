@@ -1,7 +1,7 @@
 #include <android/native_activity.h>
 #include <thread>
 #include <atomic>
-#include "RendererVulkan.h"
+#include "RenderVulkan.h"
 
 // Variables globales de control para el ciclo de vida de Android
 std::atomic<bool> g_ejecutando{false};

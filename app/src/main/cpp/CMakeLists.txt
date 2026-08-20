@@ -6,7 +6,7 @@ add_library(
     adventures
     SHARED
     main.cpp
-    RendererVulkan.cpp
+    RenderVulkan.cpp
 )
 
 # Forzamos a que el enlazador reconozca el punto de entrada de Android (ANativeActivity)
