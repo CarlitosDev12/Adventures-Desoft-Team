@@ -1,3 +1,4 @@
+#define VK_USE_PLATFORM_ANDROID_KHR
 #include "RenderVulkan.h"
 
 void RendererVulkan::inicializar(ANativeWindow* ventana) {
