@@ -1,4 +1,4 @@
-#include "RendererVulkan.h"
+#include "RenderVulkan.h"
 
 void RendererVulkan::inicializar(ANativeWindow* ventana) {
     // 1. Instancia de Vulkan
