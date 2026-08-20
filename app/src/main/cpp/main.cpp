@@ -3,47 +3,54 @@
 #include <android/input.h>
 #include <android/log.h>
 #include <vulkan/vulkan.h>
-#include "VkBootstrap.h" // Nuestra librería auxiliar de Vulkan[span_1](start_span)[span_1](end_span)
-#include "VkBootstrapDispatch.h[span_2](start_span)"[span_2](end_span)
-// Elimina la línea de VkBootstrapFeatureChain.h
+#include <vulkan/vulkan_android.h>
 #include <stdlib.h>
 #include <thread>
 #include <atomic>
+#include <vector>
 
-#define LOG_TAG "AndroidVulkan"
+#define LOG_TAG "AndroidVulkanPuro"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 struct EstadoApp {
-    // Reemplazamos las variables de EGL por las de Vulkan y vk-bootstrap
     VkInstance instancia;
-    VkDebugUtilsMessengerEXT debugMessenger;
     VkPhysicalDevice dispositivoFisico;
     VkDevice dispositivoLogico;
     VkSurfaceKHR superficie;
+    VkQueue colaGrafica;
     
     std::atomic<bool> ejecutando;
     std::thread hiloRender;
     ANativeWindow* ventanaActual;
 };
 
-void inicializarGráficosVulkan(ANativeWindow* ventana, EstadoApp* estado) {
-    LOGI("Configurando Vulkan con vk-bootstrap en hilo independiente...");
-    
-    // 1. Crear Instancia de Vulkan
-    vkb::InstanceBuilder builder;
-    auto inst_ret = builder.set_app_name("JuegoVulkanNativo")
-                           .request_validation_layers(true)
-                           .use_default_debug_messenger()
-                           .build();
-                           
-    if (!inst_ret) {
-        LOGI("Error al crear la instancia de Vulkan: %s", inst_ret.error().message().c_str());
+void inicializarVulkanPuro(ANativeWindow* ventana, EstadoApp* estado) {
+    LOGI("Inicializando Vulkan puro en Android...");
+
+    // 1. Crear Instancia de Vulkan con extensiones obligatorias para Android
+    VkApplicationInfo appInfo = {};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = "JuegoVulkanPuro";
+    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.pEngineName = "NoEngine";
+    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_1;
+
+    const char* extensiones[] = {
+        VK_KHR_SURFACE_EXTENSION_NAME,
+        VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
+    };
+
+    VkInstanceCreateInfo createInfo = {};
+    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    createInfo.pApplicationInfo = &appInfo;
+    createInfo.enabledExtensionCount = 2;
+    createInfo.ppEnabledExtensionNames = extensiones;
+
+    if (vkCreateInstance(&createInfo, nullptr, &estado->instancia) != VK_SUCCESS) {
+        LOGI("¡Error al crear la VkInstance!");
         return;
     }
-    
-    vkb::Instance vkb_inst = inst_ret.value();
-    estado->instancia = vkb_inst.instance;
-    estado->debugMessenger = vkb_inst.debug_messenger;
 
     // 2. Crear la Superficie de Android para la ventana nativa
     VkAndroidSurfaceCreateInfoKHR surfaceCreateInfo = {};
@@ -51,32 +58,61 @@ void inicializarGráficosVulkan(ANativeWindow* ventana, EstadoApp* estado) {
     surfaceCreateInfo.window = ventana;
 
     if (vkCreateAndroidSurfaceKHR(estado->instancia, &surfaceCreateInfo, nullptr, &estado->superficie) != VK_SUCCESS) {
-        LOGI("¡Error al crear la superficie Android para Vulkan!");
+        LOGI("¡Error al crear la VkSurfaceKHR de Android!");
         return;
     }
 
-    // 3. Seleccionar Dispositivo Físico y crear Dispositivo Lógico con vk-bootstrap
-    vkb::PhysicalDeviceSelector phys_device_selector(vkb_inst);
-    auto phys_ret = phys_device_selector.set_surface(estado->superficie).select();
-    if (!phys_ret) {
-        LOGI("Error al seleccionar la tarjeta gráfica: %s", phys_ret.error().message().c_str());
+    // 3. Seleccionar Dispositivo Físico (la GPU del teléfono)
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(estado->instancia, &deviceCount, nullptr);
+    if (deviceCount == 0) {
+        LOGI("¡No se encontraron GPUs compatibles con Vulkan en este dispositivo!");
         return;
     }
-    
-    vkb::PhysicalDevice vkb_physical_device = phys_ret.value();
-    estado->dispositivoFisico = vkb_physical_device.physical_device;
 
-    vkb::DeviceBuilder device_builder(vkb_physical_device);
-    auto dev_ret = device_builder.build();
-    if (!dev_ret) {
-        LOGI("Error al crear el dispositivo lógico: %s", dev_ret.error().message().c_str());
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+    vkEnumeratePhysicalDevices(estado->instancia, &deviceCount, devices.data());
+    estado->dispositivoFisico = devices[0]; // Seleccionamos la primera GPU disponible
+
+    // 4. Encontrar una cola gráfica válida
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(estado->dispositivoFisico, &queueFamilyCount, nullptr);
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(estado->dispositivoFisico, &queueFamilyCount, queueFamilies.data());
+
+    uint32_t graphicsQueueFamilyIndex = UINT32_MAX;
+    for (uint32_t i = 0; i < queueFamilyCount; i++) {
+        if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            graphicsQueueFamilyIndex = i;
+            break;
+        }
+    }
+
+    // 5. Crear Dispositivo Lógico (VkDevice)
+    float queuePriority = 1.0f;
+    VkDeviceQueueCreateInfo queueCreateInfo = {};
+    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queueCreateInfo.queueFamilyIndex = graphicsQueueFamilyIndex;
+    queueCreateInfo.queueCount = 1;
+    queueCreateInfo.pQueuePriorities = &queuePriority;
+
+    const char* deviceExtensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+
+    VkDeviceCreateInfo deviceCreateInfo = {};
+    deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    deviceCreateInfo.queueCreateInfoCount = 1;
+    deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
+    deviceCreateInfo.enabledExtensionCount = 1;
+    deviceCreateInfo.ppEnabledExtensionNames = deviceExtensions;
+
+    if (vkCreateDevice(estado->dispositivoFisico, &deviceCreateInfo, nullptr, &estado->dispositivoLogico) != VK_SUCCESS) {
+        LOGI("¡Error al crear el VkDevice lógico!");
         return;
     }
-    
-    vkb::Device vkb_device = dev_ret.value();
-    estado->dispositivoLogico = vkb_device.device;
 
-    LOGI("¡Vulkan inicializado con éxito usando vk-bootstrap!");
+    vkGetDeviceQueue(estado->dispositivoLogico, graphicsQueueFamilyIndex, 0, &estado->colaGrafica);
+
+    LOGI("¡Vulkan inicializado limpiamente de forma nativa sin librerías externas!");
 }
 
 void limpiarRecursos(EstadoApp* estado) {
@@ -87,15 +123,14 @@ void limpiarRecursos(EstadoApp* estado) {
     if (estado->superficie != VK_NULL_HANDLE && estado->instancia != VK_NULL_HANDLE) {
         vkDestroySurfaceKHR(estado->instancia, estado->superficie, nullptr);
     }
-    vkb::destroy_debug_utils_messenger(estado->instancia, estado->debugMessenger);
     if (estado->instancia != VK_NULL_HANDLE) {
         vkDestroyInstance(estado->instancia, nullptr);
     }
-    LOGI("Recursos gráficos liberados.");
+    LOGI("Recursos liberados con éxito.");
 }
 
 void bucleDeRenderizado(EstadoApp* estado) {
-    LOGI("Hilo de renderizado lanzado.");
+    LOGI("Hilo de renderizado iniciado.");
     
     while (estado->ejecutando && estado->ventanaActual == nullptr) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -103,41 +138,36 @@ void bucleDeRenderizado(EstadoApp* estado) {
 
     if (!estado->ejecutando) return;
 
-    // Inicializamos Vulkan usando la ventana actual de Android
-    inicializarGráficosVulkan(estado->ventanaActual, estado);
+    inicializarVulkanPuro(estado->ventanaActual, estado);
 
     while (estado->ejecutando) {
-        // Aquí en el futuro iría la grabación y envío de Command Buffers de Vulkan
-        // Por ahora dejamos el hilo corriendo de forma estable
-        std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 FPS simulados
+        // Aquí puedes meter la lógica de dibujo por fotograma en el futuro
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 
     limpiarRecursos(estado);
-    LOGI("Hilo de renderizado finalizado limpiamente.");
+    LOGI("Hilo de renderizado finalizado.");
 }
 
 // ====================================================================
-// CALLBACKS DEL CICLO DE VIDA (Idénticos a tu estructura original)
+// CALLBACKS DEL CICLO DE VIDA DE ANDROID
 // ====================================================================
 
 void onNativeWindowCreated(ANativeActivity* actividad, ANativeWindow* ventana) {
     LOGI("Ventana creada.");
     EstadoApp* estado = (EstadoApp*)actividad->instance;
-    
     estado->ventanaActual = ventana;
     estado->ejecutando = true;
     
     if (estado->hiloRender.joinable()) {
         estado->hiloRender.join();
     }
-    
     estado->hiloRender = std::thread(bucleDeRenderizado, estado);
 }
 
 void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana) {
     LOGI("Ventana destruida.");
     EstadoApp* estado = (EstadoApp*)actividad->instance;
-    
     if (estado->ejecutando) {
         estado->ejecutando = false;
         if (estado->hiloRender.joinable()) {
@@ -148,9 +178,7 @@ void onNativeWindowDestroyed(ANativeActivity* actividad, ANativeWindow* ventana)
 }
 
 void onDestroy(ANativeActivity* actividad) {
-    LOGI("Destruyendo actividad nativa. Liberando estructuras...");
     EstadoApp* estado = (EstadoApp*)actividad->instance;
-    
     if (estado) {
         if (estado->hiloRender.joinable()) {
             estado->ejecutando = false;
@@ -161,20 +189,14 @@ void onDestroy(ANativeActivity* actividad) {
     }
 }
 
-// ====================================================================
-// EVENTOS DE ENTRADA
-// ====================================================================
 static int loopCallback(int fd, int events, void* data) {
     AInputQueue* queue = static_cast<AInputQueue*>(data);
     AInputEvent* evento = nullptr;
-
     while (AInputQueue_getEvent(queue, &evento) >= 0) {
-        if (AInputQueue_preDispatchEvent(queue, evento)) {
-            continue;
-        }
+        if (AInputQueue_preDispatchEvent(queue, evento)) continue;
         AInputQueue_finishEvent(queue, evento, 0);
     }
-    return 1; 
+    return 1;
 }
 
 void onInputQueueCreated(ANativeActivity* actividad, AInputQueue* queue) {
@@ -185,23 +207,19 @@ void onInputQueueDestroyed(ANativeActivity* actividad, AInputQueue* queue) {
     AInputQueue_detachLooper(queue);
 }
 
-// ====================================================================
-// PUNTO DE ENTRADA
-// ====================================================================
 void ANativeActivity_onCreate(ANativeActivity* actividad, void* savedState, size_t savedStateSize) {
-    LOGI("Iniciando ANativeActivity con Vulkan...");
+    LOGI("Iniciando ANativeActivity con Vulkan Puro...");
 
     EstadoApp* estado = (EstadoApp*)malloc(sizeof(EstadoApp));
     estado->instancia = VK_NULL_HANDLE;
-    estado->debugMessenger = VK_NULL_HANDLE;
     estado->dispositivoFisico = VK_NULL_HANDLE;
     estado->dispositivoLogico = VK_NULL_HANDLE;
     estado->superficie = VK_NULL_HANDLE;
+    estado->colaGrafica = VK_NULL_HANDLE;
     estado->ejecutando = false;
     estado->ventanaActual = nullptr;
     
-    new (&estado->hiloRender) std::thread(); 
-
+    new (&estado->hiloRender) std::thread();
     actividad->instance = estado;
 
     actividad->callbacks->onNativeWindowCreated = onNativeWindowCreated;
