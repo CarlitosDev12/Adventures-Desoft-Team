@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22.1)
 project("adventures")
 
-# Declaramos nuestra librería compartida e incluimos los dos archivos fuente
+# Declaramos nuestra librería compartida e incluimos los dos archivos fuente 
 add_library(
     adventures
     SHARED
