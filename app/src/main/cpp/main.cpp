@@ -1,51 +1,69 @@
-#include <android/native_activity.h>
-#include <thread>
-#include <atomic>
+#include <jni.h>
+#include <android_native_app_glue.h>
 #include "RenderVulkan.h"
 
-// Variables globales de control para el ciclo de vida de Android
-std::atomic<bool> g_ejecutando{false};
-std::thread g_hiloRender;
-RendererVulkan g_renderer;
+// Estructura para manejar el estado de la app si lo necesitas
+struct EstadoApp {
+    RendererVulkan renderer;
+    bool ventanaCreada = false;
+};
 
-void iniciarRenderizado(ANativeWindow* ventana) {
-    if (g_ejecutando) return; // Evita iniciar el hilo dos veces
-    g_ejecutando = true;
-    
-    g_hiloRender = std::thread([ventana]() {
-        g_renderer.inicializar(ventana);
-        
-        // Bucle de renderizado seguro
-        while (g_ejecutando) {
-            g_renderer.dibujarFrame();
-        }
-        
-        // Limpiamos los recursos de Vulkan al salir del bucle
-        g_renderer.limpiar();
-    });
-}
+// Callback para procesar los eventos de Android (toques, ciclo de vida, ventana)
+static void procesarComandoApp(struct android_app* app, int32_t cmd) {
+    EstadoApp* state = (EstadoApp*)app->userData;
 
-void detenerRenderizado() {
-    if (!g_ejecutando) return;
-    
-    // 1. Apagamos la bandera para que el hilo salga del while
-    g_ejecutando = false;
-    
-    // 2. Esperamos a que el hilo termine de forma ordenada
-    if (g_hiloRender.joinable()) {
-        g_hiloRender.join();
+    switch (cmd) {
+        case APP_CMD_INIT_WINDOW:
+            // La ventana de Android ha sido creada, inicializamos Vulkan
+            if (app->window != nullptr) {
+                state->renderer.inicializar(app->window);
+                state->ventanaCreada = true;
+            }
+            break;
+        case APP_CMD_TERM_WINDOW:
+            // La ventana se va a destruir, limpiamos Vulkan
+            state->renderer.limpiar();
+            state->ventanaCreada = false;
+            break;
+        case APP_CMD_PAUSE:
+            // La app pasa a segundo plano
+            break;
+        case APP_CMD_RESUME:
+            // La app vuelve a primer plano
+            break;
     }
 }
 
-void onWindowCreated(ANativeActivity* activity, ANativeWindow* window) {
-    iniciarRenderizado(window);
-}
+// Punto de entrada principal requerido por native_app_glue
+void android_main(struct android_app* state) {
+    EstadoApp appState;
+    state->userData = &appState;
+    state->onAppCmd = procesarComandoApp;
 
-void onWindowDestroyed(ANativeActivity* activity, ANativeWindow* window) {
-    detenerRenderizado();
-}
+    int ident;
+    int events;
+    android_poll_source* source;
 
-void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
-    activity->callbacks->onNativeWindowCreated = onWindowCreated;
-    activity->callbacks->onNativeWindowDestroyed = onWindowDestroyed;
+    // Bucle principal de la aplicación gestionado de forma segura por Android
+    while (true) {
+        // ALooper_pollOnce procesa los eventos sin bloquear la CPU infinitamente
+        // Si el valor de timeout es 0, corre de forma fluida (modo juego)
+        while ((ident = ALooper_pollOnce(appState.ventanaCreada ? 0 : -1, nullptr, &events, (void**)&source)) >= 0) {
+            
+            if (source != nullptr) {
+                source->process(state, source);
+            }
+
+            // Comprobamos si la app debe destruirse
+            if (state->destroyRequested != 0) {
+                appState.renderer.limpiar();
+                return;
+            }
+        }
+
+        // Si la ventana está creada y activa, dibujamos los frames paso a paso
+        if (appState.ventanaCreada) {
+            appState.renderer.dibujarFrame();
+        }
+    }
 }

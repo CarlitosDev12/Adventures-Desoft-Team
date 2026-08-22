@@ -2,7 +2,7 @@
 #include "RenderVulkan.h"
 
 void RendererVulkan::inicializar(ANativeWindow* ventana) {
-    // 1. Instancia de Vulkan
+    // 1. Instancia de Vulkan[span_2](start_span)[span_2](end_span)
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.apiVersion = VK_API_VERSION_1_1;
@@ -20,20 +20,20 @@ void RendererVulkan::inicializar(ANativeWindow* ventana) {
 
     vkCreateInstance(&createInfo, nullptr, &instancia);
 
-    // 2. Superficie de la ventana de Android
+    // 2. Superficie de la ventana de Android[span_3](start_span)[span_3](end_span)
     VkAndroidSurfaceCreateInfoKHR surfaceCreateInfo = {};
     surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
     surfaceCreateInfo.window = ventana;
     vkCreateAndroidSurfaceKHR(instancia, &surfaceCreateInfo, nullptr, &superficie);
 
-    // 3. Dispositivo físico (GPU)
+    // 3. Dispositivo físico (GPU)[span_4](start_span)[span_4](end_span)
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(instancia, &deviceCount, nullptr);
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(instancia, &deviceCount, devices.data());
     dispositivoFisico = devices[0];
 
-    // 4. Buscar la familia de colas gráficas
+    // 4. Buscar la familia de colas gráficas[span_5](start_span)[span_5](end_span)
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(dispositivoFisico, &queueFamilyCount, nullptr);
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
@@ -47,7 +47,7 @@ void RendererVulkan::inicializar(ANativeWindow* ventana) {
         }
     }
 
-    // 5. Dispositivo lógico
+    // 5. Dispositivo lógico[span_6](start_span)[span_6](end_span)
     float queuePriority = 1.0f;
     VkDeviceQueueCreateInfo queueCreateInfo = {};
     queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -67,13 +67,13 @@ void RendererVulkan::inicializar(ANativeWindow* ventana) {
     vkCreateDevice(dispositivoFisico, &deviceCreateInfo, nullptr, &dispositivoLogico);
     vkGetDeviceQueue(dispositivoLogico, queueFamilyIndex, 0, &colaGrafica);
 
-    // 6. Dimensiones de la pantalla
+    // 6. Dimensiones de la pantalla[span_7](start_span)[span_7](end_span)
     int32_t ancho = ANativeWindow_getWidth(ventana);
     int32_t alto = ANativeWindow_getHeight(ventana);
     swapchainExtent = { (uint32_t)ancho, (uint32_t)alto };
     VkFormat swapchainImageFormat = VK_FORMAT_B8G8R8A8_UNORM;
 
-    // 7. Swapchain (Gestor de imágenes de pantalla)
+    // 7. Swapchain[span_8](start_span)[span_8](end_span)
     VkSwapchainCreateInfoKHR swapchainInfo = {};
     swapchainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     swapchainInfo.surface = superficie;
@@ -96,7 +96,7 @@ void RendererVulkan::inicializar(ANativeWindow* ventana) {
     swapchainImages.resize(imageCount);
     vkGetSwapchainImagesKHR(dispositivoLogico, swapchain, &imageCount, swapchainImages.data());
 
-    // 8. Image Views
+    // 8. Image Views[span_9](start_span)[span_9](end_span)
     swapchainImageViews.resize(imageCount);
     for (size_t i = 0; i < imageCount; i++) {
         VkImageViewCreateInfo viewInfo = {};
@@ -111,7 +111,7 @@ void RendererVulkan::inicializar(ANativeWindow* ventana) {
         vkCreateImageView(dispositivoLogico, &viewInfo, nullptr, &swapchainImageViews[i]);
     }
 
-    // 9. Render Pass (Configurado para limpiar la pantalla)
+    // 9. Render Pass[span_10](start_span)[span_10](end_span)
     VkAttachmentDescription colorAttachment = {};
     colorAttachment.format = swapchainImageFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -138,7 +138,7 @@ void RendererVulkan::inicializar(ANativeWindow* ventana) {
 
     vkCreateRenderPass(dispositivoLogico, &renderPassInfo, nullptr, &renderPass);
 
-    // 10. Framebuffers
+    // 10. Framebuffers[span_11](start_span)[span_11](end_span)
     framebuffers.resize(imageCount);
     for (size_t i = 0; i < imageCount; i++) {
         VkFramebufferCreateInfo fbInfo = {};
@@ -153,7 +153,7 @@ void RendererVulkan::inicializar(ANativeWindow* ventana) {
         vkCreateFramebuffer(dispositivoLogico, &fbInfo, nullptr, &framebuffers[i]);
     }
 
-    // 11. Command Pool y Buffer
+    // 11. Command Pool y Buffer[span_12](start_span)[span_12](end_span)
     VkCommandPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.queueFamilyIndex = queueFamilyIndex;
@@ -176,9 +176,8 @@ void RendererVulkan::dibujarFrame() {
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    // Color BLANCO total (R=1, G=1, B=1, A=1)
     VkClearValue clearValue = {};
-    clearValue.color = { {1.0f, 1.0f, 1.0f, 1.0f} };
+    clearValue.color = { {1.0f, 1.0f, 1.0f, 1.0f} }; // Fondo blanco[span_13](start_span)[span_13](end_span)
 
     VkRenderPassBeginInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -189,10 +188,8 @@ void RendererVulkan::dibujarFrame() {
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearValue;
 
-    // Inicia el pase de renderizado que pinta de blanco y termina inmediatamente
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdEndRenderPass(commandBuffer);
-
     vkEndCommandBuffer(commandBuffer);
 
     VkSubmitInfo submitInfo = {};
@@ -229,4 +226,3 @@ void RendererVulkan::limpiar() {
         vkDestroyInstance(instancia, nullptr);
     }
 }
-

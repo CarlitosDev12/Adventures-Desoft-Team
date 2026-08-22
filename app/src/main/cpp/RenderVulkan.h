@@ -27,4 +27,3 @@ private:
     uint32_t queueFamilyIndex = 0;
     VkExtent2D swapchainExtent = {};
 };
-
